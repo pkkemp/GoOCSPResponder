@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>checkCertificateTrust</key>
+	<integer>3</integer>
+	<key>TrustedAuthorities</key>
+	<array>
+		<string>5C354C6EFE0C8B228AE26F52C46C43B12D2951D40965F78D5E13BACE7F746C86</string>
+	</array>
+	<key>AttributeMapping</key>
+	<dict>
+		<key>fields</key>
+		<array>
+			<string>NT Principal Name</string>
+		</array>
+		<key>formatString</key>
+		<string>Kerberos:$1</string>
+		<key>dsAttributeString</key>
+		<string>dsAttrTypeStandard:AltSecurityIdentities</string>
+	</dict>
+</dict>
+</plist>

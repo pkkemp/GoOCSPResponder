@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{.PageTitle}}</title>
+</head>
+<body>
+<h1>{{.PageTitle}}</h1>
+{{range .CRLS}}
+    {{range index .TBSCertList.Issuer 4}}
+        <h1>{{.Value}}</h1>
+    {{end}}
+<ul>
+    {{range .TBSCertList.RevokedCertificates}}
+        <li>{{.SerialNumber}}</li>
+    {{end}}
+</ul>
+{{end}}
+</body>
+</html>

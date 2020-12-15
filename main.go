@@ -39,9 +39,10 @@ func getSha384Fingerprint(certificate *x509.Certificate) [sha512.Size384]byte {
 
 
 type CRLInfo struct {
-	Size       int64
-	RemoteAddr string
-	FileName string
+	Size        int64
+	RemoteAddr  string
+	CA          *x509.Certificate
+	FileName    string
 }
 
 type CertificateBundle struct {
@@ -212,10 +213,11 @@ v5HSOJTT9pUst2zJQraNypCNhdk=
 
 func GenerateOCSPResponse(caName string, certs CertificateBundle, responderCert *x509.Certificate) {
 
-	var issuer *Certificate
+	var issuer *x509.Certificate
 	var status ocsp.ResponseStatus
 	for _, cert := range certs.Certificates {
 		if cert.Subject.CommonName == caName {
+			issuer = &cert
 
 			break
 		}
@@ -325,11 +327,11 @@ func parseCRL(crlFile string) *pkix.CertificateList {
 	return crl
 }
 
-type CRLInfo struct {
-	CAName string
-	NumRevocations int
-	CRL *pkix.CertificateList
-}
+//type CRLInfo struct {
+//	CAName string
+//	NumRevocations int
+//	CRL *pkix.CertificateList
+//}
 
 type CRLPageData struct {
 	PageTitle string
@@ -380,22 +382,24 @@ func crlHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type CRLBloomFilter struct {
-	CA string
-	Filter bloom.BloomFilter
+	crlInfo CRLInfo
+	Filter *bloom.BloomFilter
 }
 
 func ConstructBloomFilters(crls[] CRLInfo) []CRLBloomFilter {
 	var filters []CRLBloomFilter
 	for _, crl := range crls {
-		var temp CRLBloomFilter {
-			CA: crl.FileName
+		 temp := CRLBloomFilter {
+			crlInfo: crl,
+			Filter: ConstructBloomFilter(crl),
 		}
-		filters = append(filters, ConstructBloomFilter(crl))
+		filters = append(filters, temp)
 	}
 	return filters
 }
 
 func ConstructBloomFilter(crl CRLInfo) *bloom.BloomFilter {
+	//TODO Fix n value
 	filter := createBloom(1000000)
 	parsedCRL := parseCRL(crl.FileName)
 	for k := 0; k < len(parsedCRL.TBSCertList.RevokedCertificates); k++ {
@@ -438,48 +442,6 @@ func main() {
 	fmt.Println(findItemBloom(3145526, filter))
 	fmt.Println(findItemBloom(1572626, filter))
 
-
-	//loadCertificates()
-	//CRLDownloadInfo := downloadCRLs()
-	//for _, CRLInfo := range CRLDownloadInfo {
-	//	fmt.Println(CRLInfo.FileName, " has ",len(parseCRL(CRLInfo.FileName).TBSCertList.RevokedCertificates), " revocations")
-	//}
-	// Set up a /hello resource handler
-	// Set up a /hello resource handler
-	//http.HandleFunc("/hello", helloHandler)
-	////http.HandleFunc("/crl", crlHandler)
-	//http.HandleFunc("/crlstats", crlStatsHandler)
-	//http.HandleFunc("/crl", crlHandler)
-	//
-	//// Create a CA certificate pool and add cert.pem to it
-	////caCert, err := ioutil.ReadFile("cert.pem")
-	//cloudflare, err := ioutil.ReadFile("origin-pull-ca.pem")
-
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//caCertPool := x509.NewCertPool()
-	//caCertPool.AppendCertsFromPEM(cloudflare)
-	////caCertPool.AppendCertsFromPEM(caCert)
-	//
-	//
-	//// Create the TLS Config with the CA pool and enable Client certificate validation
-	//tlsConfig := &tls.Config{
-	//	//ClientCAs: caCertPool,
-	//	//ClientAuth: tls.RequireAndVerifyClientCert,
-	//}
-	////tlsConfig.BuildNameToCertificate()
-	//
-	//// Create a Server instance to listen on port 8443 with the TLS config
-	//server := &http.Server{
-	//	Addr:      ":8080",
-	//	TLSConfig: tlsConfig,
-	//}
-	//
-	//// Listen to HTTPS connections with the server certificate and wait
-	////log.Fatal(server.ListenAndServeTLS("cert.pem", "key.pem"))
-	//log.Fatal(server.ListenAndServe())
-	////fmt.Println("Downloaded from", CRLEndpoint, CRLDownloadInfo[0].RemoteAddr)
 }
 
 func createBloom(n uint) *bloom.BloomFilter {
@@ -521,6 +483,7 @@ func downloadCRLs() []CRLInfo {
 				fingerprint := getSha256Fingerprint(&cert)
 				var crlSize int64 = 0
 				downloadInfo := downloadFromUrl(crl, 80)
+				downloadInfo.CA = &cert
 				crlSize = downloadInfo.Size
 				s := cert.Subject.CommonName + " " + cert.SignatureAlgorithm.String() + " Issuing CA: " + cert.Issuer.CommonName + " CRLInfo Size: " + strconv.Itoa(int(crlSize)) + ": "
 				s += fmt.Sprintf("%x", fingerprint)
@@ -531,35 +494,4 @@ func downloadCRLs() []CRLInfo {
 		}
 	}
 	return CRLDownloadInfo
-}
-
-func CreateSmartCardPlist(hashes []string, filename string) string {
-
-	base := `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>TrustedAuthorities</key>
-	<array>`
-
-	for _, k := range hashes {
-		base += "\n" + "<string>" + k + "</string>" + "\n"
-
-	}
-	base += `</array>\n`
-	base += `	<key>AttributeMapping</key>
-	<dict>
-		<key>fields</key>
-		<array>
-			<string>NT Principal Name</string>
-		</array>
-		<key>formatString</key>
-		<string>Kerberos:$1</string>
-		<key>dsAttributeString</key>
-		<string>dsAttrTypeStandard:AltSecurityIdentities</string>
-	</dict>
-</dict>
-</plist>`
-
-	return base
 }

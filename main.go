@@ -38,7 +38,7 @@ func getSha384Fingerprint(certificate *x509.Certificate) [sha512.Size384]byte {
 
 
 
-type DownloadInfo struct {
+type CRLInfo struct {
 	Size       int64
 	RemoteAddr string
 	FileName string
@@ -52,7 +52,7 @@ type CertificateBundle struct {
 	Hash256 []string
 }
 
-func downloadFromUrl(url string, port int) DownloadInfo {
+func downloadFromUrl(url string, port int) CRLInfo {
 	tokens := strings.Split(url, "/")
 	host := tokens[2]
 	host += ":" + strconv.Itoa(port)
@@ -82,7 +82,7 @@ func downloadFromUrl(url string, port int) DownloadInfo {
 		panic("Error while downloading " + url)
 	}
 
-	return DownloadInfo{Size: n, RemoteAddr: conn.RemoteAddr().String(), FileName:fileName}
+	return CRLInfo{Size: n, RemoteAddr: conn.RemoteAddr().String(), FileName:fileName}
 	//fmt.Println(n, "bytes downloaded.")
 }
 
@@ -210,26 +210,26 @@ v5HSOJTT9pUst2zJQraNypCNhdk=
 	}
 }
 
-func GenerateOCSPResponse() {
-	response := ocsp.Response{
+func GenerateOCSPResponse(caName string, certs CertificateBundle, responderCert *x509.Certificate) {
+
+	var issuer *Certificate
+	var status ocsp.ResponseStatus
+	for _, cert := range certs.Certificates {
+		if cert.Subject.CommonName == caName {
+
+			break
+		}
+		//TODO: change status code based on errors
+	}
+	templateInfo := ocsp.Response{
 		Status:             0,
 		SerialNumber:       nil,
-		ProducedAt:         time.Time{},
 		ThisUpdate:         time.Time{},
 		NextUpdate:         time.Time{},
 		RevokedAt:          time.Time{},
 		RevocationReason:   0,
-		Certificate:        nil,
-		TBSResponseData:    nil,
-		Signature:          nil,
-		SignatureAlgorithm: 0,
-		IssuerHash:         0,
-		RawResponderName:   nil,
-		ResponderKeyHash:   nil,
-		Extensions:         nil,
-		ExtraExtensions:    nil,
 	}
-	ocsp.CreateResponse()
+	ocsp.CreateResponse(, templateInfo, )
 }
 
 func loadCertificates() CertificateBundle {
@@ -372,7 +372,7 @@ func crlHandler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	CRL := loadCRLs(readCurrentDir())
 	data := CRLPageData{
-		PageTitle: "CRL Info",
+		PageTitle: "CRLInfo Info",
 		CRLS: CRL}
 	elapsed := time.Since(start)
 	log.Printf("crlHandler took %s", elapsed)
@@ -384,9 +384,29 @@ type CRLBloomFilter struct {
 	Filter bloom.BloomFilter
 }
 
+func ConstructBloomFilters(crls[] CRLInfo) []CRLBloomFilter {
+	var filters []CRLBloomFilter
+	for _, crl := range crls {
+		var temp CRLBloomFilter {
+			CA: crl.FileName
+		}
+		filters = append(filters, ConstructBloomFilter(crl))
+	}
+	return filters
+}
+
+func ConstructBloomFilter(crl CRLInfo) *bloom.BloomFilter {
+	filter := createBloom(1000000)
+	parsedCRL := parseCRL(crl.FileName)
+	for k := 0; k < len(parsedCRL.TBSCertList.RevokedCertificates); k++ {
+		addItemToBloom(parsedCRL.TBSCertList.RevokedCertificates[k].SerialNumber.Uint64(), filter)
+	}
+	return filter
+}
+
 
 func main() {
-	downloadCRLs()
+	list := downloadCRLs()
 	const CRLEndpoint = "crl.disa.mil"
 	const OCSPEndpoint = "ocsp.disa.mil"
 	//data := downloadCRLs()
@@ -402,7 +422,7 @@ func main() {
 	//	currentFilter := &filters[i].Filter
 	//	currentFilter = createBloom(1000000)
 	//	filters[i].CA = CRLS[i].TBSCertList.Issuer.String()
-	//	for j:= 0; j < len(CRL.TBSCertList.RevokedCertificates); j++  {
+	//	for j:= 0; j < len(CRLInfo.TBSCertList.RevokedCertificates); j++  {
 	//		addItemToBloom(CRLS[i].TBSCertList.RevokedCertificates[j].SerialNumber.Uint64(), currentFilter)
 	//	}
 	//}
@@ -421,8 +441,8 @@ func main() {
 
 	//loadCertificates()
 	//CRLDownloadInfo := downloadCRLs()
-	//for _, CRL := range CRLDownloadInfo {
-	//	fmt.Println(CRL.FileName, " has ",len(parseCRL(CRL.FileName).TBSCertList.RevokedCertificates), " revocations")
+	//for _, CRLInfo := range CRLDownloadInfo {
+	//	fmt.Println(CRLInfo.FileName, " has ",len(parseCRL(CRLInfo.FileName).TBSCertList.RevokedCertificates), " revocations")
 	//}
 	// Set up a /hello resource handler
 	// Set up a /hello resource handler
@@ -479,10 +499,10 @@ func findItemBloom(serial uint64, filter *bloom.BloomFilter) bool {
 	return filter.Test(n1)
 }
 
-func downloadCRLs() []DownloadInfo {
+func downloadCRLs() []CRLInfo {
 	bundle := loadCertificates()
 	certs := bundle.Certificates
-	var CRLDownloadInfo []DownloadInfo
+	var CRLDownloadInfo []CRLInfo
 	for _, cert := range certs {
 		if VerifyCertificate(cert) {
 			if !strings.HasPrefix(cert.Subject.CommonName, "DoD Root") {
@@ -502,7 +522,7 @@ func downloadCRLs() []DownloadInfo {
 				var crlSize int64 = 0
 				downloadInfo := downloadFromUrl(crl, 80)
 				crlSize = downloadInfo.Size
-				s := cert.Subject.CommonName + " " + cert.SignatureAlgorithm.String() + " Issuing CA: " + cert.Issuer.CommonName + " CRL Size: " + strconv.Itoa(int(crlSize)) + ": "
+				s := cert.Subject.CommonName + " " + cert.SignatureAlgorithm.String() + " Issuing CA: " + cert.Issuer.CommonName + " CRLInfo Size: " + strconv.Itoa(int(crlSize)) + ": "
 				s += fmt.Sprintf("%x", fingerprint)
 				//hashes = append(hashes, s)
 				fmt.Println(s)

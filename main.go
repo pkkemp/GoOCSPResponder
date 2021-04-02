@@ -23,6 +23,8 @@ import (
 	"time"
 )
 
+var filter *bloom.BloomFilter
+
 func getSha256Fingerprint(certificate *x509.Certificate) [sha256.Size]byte {
 	return sha256.Sum256(certificate.Raw)
 }
@@ -409,12 +411,12 @@ func ConstructBloomFilter(crl CRLInfo) *bloom.BloomFilter {
 
 
 func main() {
-    downloadCRLs()
+    //downloadCRLs()
 	const CRLEndpoint = "crl.disa.mil"
 	const OCSPEndpoint = "ocsp.disa.mil"
 	//data := downloadCRLs()
 	//fmt.Print("Downloaded from: ", data)
-	filter := createBloom(1000000)
+	filter = createBloom(1000000)
 	CRL := parseCRL("DODEMAILCA_41.crl")
 	//CRLS := loadCRLs(readCurrentDir())
 	//const numFCRLS = 100
@@ -440,7 +442,15 @@ func main() {
 	fmt.Println(findItemBloom(3145525, filter))
 	fmt.Println(findItemBloom(3145526, filter))
 	fmt.Println(findItemBloom(1572626, filter))
+	http.HandleFunc("/", handler)
+	log.Fatal(http.ListenAndServe(":8080", nil))
 
+}
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	cert, _ := strconv.ParseUint(r.URL.Path[1:], 10, 64)
+	revoked:= findItemBloom(cert, filter)
+	fmt.Fprintf(w, "Certificate Revoked?: %t", revoked)
 }
 
 func createBloom(n uint) *bloom.BloomFilter {

@@ -11,7 +11,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"github.com/willf/bloom"
-	"golang.org/x/crypto/ocsp"
 	"html/template"
 	"io"
 	"log"
@@ -211,28 +210,28 @@ v5HSOJTT9pUst2zJQraNypCNhdk=
 	}
 }
 
-func GenerateOCSPResponse(caName string, certs CertificateBundle, responderCert *x509.Certificate) {
-
-	var issuer *x509.Certificate
-	var status ocsp.ResponseStatus
-	for _, cert := range certs.Certificates {
-		if cert.Subject.CommonName == caName {
-			issuer = &cert
-
-			break
-		}
-		//TODO: change status code based on errors
-	}
-	templateInfo := ocsp.Response{
-		Status:             0,
-		SerialNumber:       nil,
-		ThisUpdate:         time.Time{},
-		NextUpdate:         time.Time{},
-		RevokedAt:          time.Time{},
-		RevocationReason:   0,
-	}
-	ocsp.CreateResponse(, templateInfo, )
-}
+//func GenerateOCSPResponse(caName string, certs CertificateBundle, responderCert *x509.Certificate) {
+//
+//	var issuer *x509.Certificate
+//	var status ocsp.ResponseStatus
+//	for _, cert := range certs.Certificates {
+//		if cert.Subject.CommonName == caName {
+//			issuer = &cert
+//
+//			break
+//		}
+//		//TODO: change status code based on errors
+//	}
+//	templateInfo := ocsp.Response{
+//		Status:             0,
+//		SerialNumber:       nil,
+//		ThisUpdate:         time.Time{},
+//		NextUpdate:         time.Time{},
+//		RevokedAt:          time.Time{},
+//		RevocationReason:   0,
+//	}
+//	ocsp.CreateResponse(&issuer, templateInfo, )
+//}
 
 func loadCertificates() CertificateBundle {
 	cert, err := os.Open("DoD_CAs.pem")
@@ -410,7 +409,7 @@ func ConstructBloomFilter(crl CRLInfo) *bloom.BloomFilter {
 
 
 func main() {
-	list := downloadCRLs()
+    downloadCRLs()
 	const CRLEndpoint = "crl.disa.mil"
 	const OCSPEndpoint = "ocsp.disa.mil"
 	//data := downloadCRLs()

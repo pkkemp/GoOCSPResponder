@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-ocsp
+  labels:
+    app: go-ocsp
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: go-ocsp
+  template:
+    metadata:
+      labels:
+        app: go-ocsp
+    spec:
+      containers:
+        - name: go-ocsp
+          image: jamfcontainerregistry.azurecr.us/goocsp:v10
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+          - mountPath: /cache
+            name: cache-volume
+      imagePullSecrets:
+        - name: jamfregistrysecret
+      volumes:
+      - name: cache-volume
+        emptyDir: {}

@@ -445,7 +445,7 @@ func ConstructBloomFilter(crl CRLInfo) *bloom.BloomFilter {
 
 
 func main() {
-	//downloadFromUrl("https://goocsp.blob.core.usgovcloudapi.net/pki/DoD_CAs.pem", 443)
+	downloadFromUrl("https://goocsp.blob.core.usgovcloudapi.net/pki/DoD_CAs.pem", 443)
     crls := downloadCRLs()
     //downloadFromUrl("https://goocsp.blob.core.usgovcloudapi.net/crl/DODEMAILCA_41.crl", 443)
 	const CRLEndpoint = "crl.disa.mil"

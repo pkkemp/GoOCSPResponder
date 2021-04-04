@@ -24,6 +24,10 @@ import (
 )
 
 var filter *bloom.BloomFilter
+var filters map[string]CRLBloomFilter
+
+const rootDir = "/cache/"
+//const rootDir = "./"
 
 func getSha256Fingerprint(certificate *x509.Certificate) [sha256.Size]byte {
 	return sha256.Sum256(certificate.Raw)
@@ -67,7 +71,7 @@ func downloadFromUrl(url string, port int) CRLInfo {
 	fmt.Println("Downloading", url, "to", fileName)
 
 	// TODO: check file existence first with io.IsExist
-	output, err := os.Create(fileName)
+	output, err := os.Create(rootDir+fileName)
 	if err != nil {
 		panic("Error while creating " + fileName)
 	}
@@ -236,7 +240,7 @@ v5HSOJTT9pUst2zJQraNypCNhdk=
 //}
 
 func loadCertificates() CertificateBundle {
-	cert, err := os.Open("DoD_CAs.pem")
+	cert, err := os.Open(rootDir+"DoD_CAs.pem")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -286,7 +290,7 @@ func loadCertificates() CertificateBundle {
 
 func readCurrentDir() []string {
 	var CRLFiles []string
-	file, err := os.Open(".")
+	file, err := os.Open(rootDir+"")
 	if err != nil {
 		log.Fatalf("failed opening directory: %s", err)
 	}
@@ -309,8 +313,37 @@ func loadCRLs(CRLList []string) []*pkix.CertificateList {
 	return parsedCRLs
 }
 
+func loadCRLsFromDisk(CRLList []string) []CRLInfo {
+	bundle := loadCertificates()
+	var crls []CRLInfo
+	var fileName string
+	for i:=0; i < len(bundle.Certificates); i++ {
+		if strings.HasPrefix(bundle.Certificates[i].Subject.CommonName, "DOD EMAIL") {
+			fileName = "DODEMAILCA_" + strings.SplitAfter(bundle.Certificates[i].Subject.CommonName, "-")[1] + ".crl"
+		} else if strings.HasPrefix(bundle.Certificates[i].Subject.CommonName, "DOD ID SW") {
+			fileName = "DODIDSWCA_" + strings.SplitAfter(bundle.Certificates[i].Subject.CommonName, "-")[1] + ".crl"
+		} else if strings.HasPrefix(bundle.Certificates[i].Subject.CommonName, "DOD ID") {
+			fileName = "DODIDCA_" + strings.SplitAfter(bundle.Certificates[i].Subject.CommonName, "-")[1] + ".crl"
+		} else if strings.HasPrefix(bundle.Certificates[i].Subject.CommonName, "DOD SW") {
+			fileName = "DODSWCA_" + strings.SplitAfter(bundle.Certificates[i].Subject.CommonName, "-")[1] + ".crl"
+		} else {
+			continue
+		}
+		temp := CRLInfo{
+			Size:       0,
+			RemoteAddr: "",
+			CA:         &bundle.Certificates[i],
+			FileName:   fileName,
+		}
+		crls = append(crls, temp)
+	}
+
+	return crls
+}
+
+
 func parseCRL(crlFile string) *pkix.CertificateList {
-	cert, err := os.Open(crlFile)
+	cert, err := os.Open(rootDir+crlFile)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -387,14 +420,15 @@ type CRLBloomFilter struct {
 	Filter *bloom.BloomFilter
 }
 
-func ConstructBloomFilters(crls[] CRLInfo) []CRLBloomFilter {
-	var filters []CRLBloomFilter
+func ConstructBloomFilters(crls[] CRLInfo) map[string]CRLBloomFilter {
+	filters := make(map[string]CRLBloomFilter)
 	for _, crl := range crls {
 		 temp := CRLBloomFilter {
 			crlInfo: crl,
 			Filter: ConstructBloomFilter(crl),
 		}
-		filters = append(filters, temp)
+		mapKey := strings.Split(temp.crlInfo.FileName, ".")
+		filters[mapKey[0]] = temp
 	}
 	return filters
 }
@@ -411,22 +445,26 @@ func ConstructBloomFilter(crl CRLInfo) *bloom.BloomFilter {
 
 
 func main() {
-    //downloadCRLs()
+	//downloadFromUrl("https://goocsp.blob.core.usgovcloudapi.net/pki/DoD_CAs.pem", 443)
+    crls := downloadCRLs()
+    //downloadFromUrl("https://goocsp.blob.core.usgovcloudapi.net/crl/DODEMAILCA_41.crl", 443)
 	const CRLEndpoint = "crl.disa.mil"
 	const OCSPEndpoint = "ocsp.disa.mil"
 	//data := downloadCRLs()
 	//fmt.Print("Downloaded from: ", data)
 	filter = createBloom(1000000)
 	CRL := parseCRL("DODEMAILCA_41.crl")
-	//CRLS := loadCRLs(readCurrentDir())
-	//const numFCRLS = 100
-	////var filters []CRLBloomFilter
+	//crls := loadCRLsFromDisk(readCurrentDir())
+	const numCRLS = 100
+
+	filters = ConstructBloomFilters(crls)
 
 	//for i:=0; i < len(CRLS); i++ {
+	//	filter := createBloom(1000000)
 	//	filters = append(filters,CRLBloomFilter{})
 	//	currentFilter := &filters[i].Filter
-	//	currentFilter = createBloom(1000000)
-	//	filters[i].CA = CRLS[i].TBSCertList.Issuer.String()
+	//	currentFilter = &filter
+	//	filters[i].crlInfo.CA = CRLS[i].TBSCertList.Issuer.String()
 	//	for j:= 0; j < len(CRLInfo.TBSCertList.RevokedCertificates); j++  {
 	//		addItemToBloom(CRLS[i].TBSCertList.RevokedCertificates[j].SerialNumber.Uint64(), currentFilter)
 	//	}
@@ -443,13 +481,16 @@ func main() {
 	fmt.Println(findItemBloom(3145526, filter))
 	fmt.Println(findItemBloom(1572626, filter))
 	http.HandleFunc("/", handler)
+	http.HandleFunc("/api", handler)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	cert, _ := strconv.ParseUint(r.URL.Path[1:], 10, 64)
-	revoked:= findItemBloom(cert, filter)
+	urlInfo := strings.Split(r.URL.Path, "/")
+	ca := urlInfo[1]
+	cert, _ := strconv.ParseUint(urlInfo[2], 10, 64)
+	revoked := findItemBloom(cert, filters[ca].Filter)
 	fmt.Fprintf(w, "Certificate Revoked?: %t", revoked)
 }
 
@@ -471,6 +512,8 @@ func findItemBloom(serial uint64, filter *bloom.BloomFilter) bool {
 }
 
 func downloadCRLs() []CRLInfo {
+	var baseURL string = "http://crl.disa.mil"
+	baseURL = "https://goocsp.blob.core.usgovcloudapi.net"
 	bundle := loadCertificates()
 	certs := bundle.Certificates
 	var CRLDownloadInfo []CRLInfo
@@ -479,13 +522,13 @@ func downloadCRLs() []CRLInfo {
 			if !strings.HasPrefix(cert.Subject.CommonName, "DoD Root") {
 				var crl = ""
 				if strings.HasPrefix(cert.Subject.CommonName, "DOD EMAIL") {
-					crl = "http://crl.disa.mil/crl/DODEMAILCA_" + strings.SplitAfter(cert.Subject.CommonName, "-")[1] + ".crl"
+					crl = baseURL+ "/crl/DODEMAILCA_" + strings.SplitAfter(cert.Subject.CommonName, "-")[1] + ".crl"
 				} else if strings.HasPrefix(cert.Subject.CommonName, "DOD ID SW") {
-					crl = "http://crl.disa.mil/crl/DODIDSWCA_" + strings.SplitAfter(cert.Subject.CommonName, "-")[1] + ".crl"
+					crl = baseURL+ "/crl/DODIDSWCA_" + strings.SplitAfter(cert.Subject.CommonName, "-")[1] + ".crl"
 				} else if strings.HasPrefix(cert.Subject.CommonName, "DOD ID") {
-					crl = "http://crl.disa.mil/crl/DODIDCA_" + strings.SplitAfter(cert.Subject.CommonName, "-")[1] + ".crl"
+					crl = baseURL+ "/crl/DODIDCA_" + strings.SplitAfter(cert.Subject.CommonName, "-")[1] + ".crl"
 				} else if strings.HasPrefix(cert.Subject.CommonName, "DOD SW") {
-					crl = "http://crl.disa.mil/crl/DODSWCA_" + strings.SplitAfter(cert.Subject.CommonName, "-")[1] + ".crl"
+					crl = baseURL+ "/crl/DODSWCA_" + strings.SplitAfter(cert.Subject.CommonName, "-")[1] + ".crl"
 				} else {
 					continue
 				}

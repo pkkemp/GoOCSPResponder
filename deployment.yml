@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: go-ocsp
-          image: jamfcontainerregistry.azurecr.us/goocsp:v12
+          image: jamfcontainerregistry.azurecr.us/goocsp:v11
           ports:
             - containerPort: 8080
           volumeMounts:

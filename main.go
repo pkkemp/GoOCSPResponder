@@ -26,8 +26,8 @@ import (
 var filter *bloom.BloomFilter
 var filters map[string]CRLBloomFilter
 
-const rootDir = "/cache/"
-//const rootDir = "./"
+//const rootDir = "/cache/"
+const rootDir = "./"
 
 func getSha256Fingerprint(certificate *x509.Certificate) [sha256.Size]byte {
 	return sha256.Sum256(certificate.Raw)
@@ -446,7 +446,7 @@ func ConstructBloomFilter(crl CRLInfo) *bloom.BloomFilter {
 
 func main() {
 	downloadFromUrl("https://goocsp.blob.core.usgovcloudapi.net/pki/DoD_CAs.pem", 443)
-    crls := downloadCRLs()
+    //crls := downloadCRLs()
     //downloadFromUrl("https://goocsp.blob.core.usgovcloudapi.net/crl/DODEMAILCA_41.crl", 443)
 	const CRLEndpoint = "crl.disa.mil"
 	const OCSPEndpoint = "ocsp.disa.mil"
@@ -454,7 +454,7 @@ func main() {
 	//fmt.Print("Downloaded from: ", data)
 	filter = createBloom(1000000)
 	CRL := parseCRL("DODEMAILCA_41.crl")
-	//crls := loadCRLsFromDisk(readCurrentDir())
+	crls := loadCRLsFromDisk(readCurrentDir())
 	const numCRLS = 100
 
 	filters = ConstructBloomFilters(crls)
@@ -482,6 +482,7 @@ func main() {
 	fmt.Println(findItemBloom(1572626, filter))
 	http.HandleFunc("/", handler)
 	http.HandleFunc("/api", handler)
+	http.HandleFunc("/stats", crlStatsHandler)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 
 }

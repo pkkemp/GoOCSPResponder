@@ -383,7 +383,7 @@ type CRLStatsPageData struct {
 }
 
 func crlStatsHandler(w http.ResponseWriter, r *http.Request) {
-	tmpl := template.Must(template.ParseFiles("crllist.html"))
+	tmpl := template.Must(template.ParseFiles("/data/crllist.html"))
 	CRLS := loadCRLs(readCurrentDir())
 	var stats CRLStatsPageData
 	for _, CRL := range CRLS {
